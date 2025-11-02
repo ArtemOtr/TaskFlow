@@ -1,0 +1,31 @@
+{
+  "dag_id": "data_pipeline",
+  "tasks": [
+    {
+      "id": "download_data",
+      "operation": "download_file",
+      "independent_params": {
+        "url": "https://example.com/data.csv",
+        "output_path": "./data/raw.csv"
+      },
+      "dependent_params": {},
+      "dependencies": [],
+      "results": {
+        "output_path": "./data/raw.csv"
+      }
+    },
+    {
+      "id": "clean_data",
+      "operation": "clean_csv",
+      "independent_params": {
+        "output_path": "./data/clean.csv",
+        "input_path": "./some/path.csv"
+      },
+      "dependent_params": {
+        "input_path": "download_data.results.output_path"
+      },
+      "dependencies": ["download_data"],
+      "results": {}
+    }
+  ]
+}

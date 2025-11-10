@@ -89,7 +89,7 @@ class TaskOrchestrator:
             # Находим следующие готовые задачи
             ready_tasks = await self._find_ready_tasks(tasks)
 
-        print(f"✅ Весь DAG {dag_id} выполнен!")
+        print(f"Весь DAG {dag_id} выполнен!")
         return self.results
 
     async def _find_ready_tasks(self, tasks):
@@ -180,12 +180,12 @@ class TaskOrchestrator:
                 )
 
                 self.results[task_id] = result
-                print(f"✅ {task_id} завершена")
-                print(f"📊 Результаты: {result}\n")
+                print(f"{task_id} завершена")
+                print(f"Результаты: {result}\n")
                 break  # Выходим из цикла retry при успехе
 
             except Exception as e:
-                print(f"❌ {task_id} упала с ошибкой (попытка {attempt_number}/{self.max_retries}): {e}")
+                print(f"{task_id} упала с ошибкой (попытка {attempt_number}/{self.max_retries}): {e}")
 
                 # Сохраняем ошибку
                 await self._save_task_state(
@@ -197,10 +197,10 @@ class TaskOrchestrator:
 
                 # Проверяем есть ли еще попытки
                 if attempt_number < self.max_retries:
-                    print(f"🔄 Повтор {task_id} через {self.retry_delay}с...")
+                    print(f"Повтор {task_id} через {self.retry_delay}с...")
                     await asyncio.sleep(self.retry_delay)
                 else:
-                    print(f"💥 {task_id} окончательно упала после {self.max_retries} попыток")
+                    print(f"{task_id} окончательно упала после {self.max_retries} попыток")
                     # Можно выбросить исключение или просто залогировать
                     break
 

@@ -47,6 +47,6 @@ async def fetch_api_data(url: str, method: str, headers: Dict = None, params: Di
             else:
                 raise ValueError(f"Неподдерживаемый HTTP метод: {method}")
 
-            return data
+            return {"response": data}
     except Exception as e:
         raise ConnectionError(f"Request failed: {str(e)}") from e

@@ -1,31 +1,36 @@
 {
-  "dag_id": "data_pipeline",
+  "dag_id": "get_from_api_and_into_telegram",
   "tasks": [
     {
-      "id": "download_data",
-      "operation": "download_file",
+      "id": "fetch_api_data",
+      "operation": "fetch_api_data",
       "independent_params": {
-        "url": "https://example.com/data.csv",
-        "output_path": "./data/raw.csv"
+        "url": "https://quotes.to.digital/api/random",
+        "method": "GET"
       },
       "dependent_params": {},
-      "dependencies": [],
-      "results": {
-        "output_path": "./data/raw.csv"
-      }
+      "dependencies": []
     },
     {
-      "id": "clean_data",
-      "operation": "clean_csv",
+      "id": "json_to_string",
+      "operation": "json_to_string",
+      "independent_params": {},
+      "dependent_params": {
+        "data": "fetch_api_data.results.output_json_path"
+      },
+      "dependencies": ["fetch_api_data"]
+    },
+    {
+      "id": "send_telegram_message",
+      "operation": "send_telegram_message",
       "independent_params": {
-        "output_path": "./data/clean.csv",
-        "input_path": "./some/path.csv"
+        "username": "@username",
+        "token": "YOUR_BOT_TOKEN"
       },
       "dependent_params": {
-        "input_path": "download_data.results.output_path"
+        "message": "json_to_string.results.string"
       },
-      "dependencies": ["download_data"],
-      "results": {}
+      "dependencies": ["json_to_string"]
     }
   ]
 }

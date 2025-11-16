@@ -1,7 +1,13 @@
 venv/
+.venv/
 __pycache__/
 *.pyc
 .idea/
 .vscode/
 data/
 reports/
+.env
+taskflow_config.json
+userdata/
+taskflow_config.json
+orchestrator.db

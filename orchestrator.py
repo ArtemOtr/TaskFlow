@@ -33,7 +33,7 @@ class TaskOrchestrator:
                 for task in self.dag_config["tasks"]:
                     task_id = task["id"]
                     await db.execute('''
-                        INSERT INTO task_states 
+                        INSERT OR REPLACE INTO task_states 
                         (task_id, status, retry_count, created_at, updated_at)
                         VALUES (?, ?, ?, ?, ?)
                     ''', (
@@ -134,13 +134,16 @@ class TaskOrchestrator:
         dependent_params = task_config["dependent_params"]
 
         state = await self._load_task_state(task_id)
-        current_retry = state["retry_count"]
+        current_retry = state.get("retry_count", 0) if state else 0
 
         if dependent_params:
             for key, value in dependent_params.items():
                 prev_task_id, result_field, param_name = dependent_params[key].split(".")[0], dependent_params[key].split(".")[1], dependent_params[key].split(".")[2]
                 if prev_task_id in self.results:
-                    dependent_params[key] = self.results[prev_task_id][param_name]
+                    if param_name in self.results[prev_task_id]:
+                        dependent_params[key] = self.results[prev_task_id][param_name]
+                    else:
+                        raise ValueError(f"Parametr '{param_name}' not found in task results")
                 else:
                     raise ValueError(f"Task with id '{prev_task_id}' not found in dag config file")
 

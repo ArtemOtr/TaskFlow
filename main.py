@@ -1,11 +1,10 @@
-# main.py
 import asyncio
 import json
 from orchestrator import TaskOrchestrator
 from operations import OPERATIONS
 
 
-async def main(data_pipeline: str, ):
+async def main(data_pipeline: str):
     # Загружаем конфиг DAG
     with open(data_pipeline, "r") as f:
         dag_config = json.load(f)
@@ -40,4 +39,5 @@ async def main(data_pipeline: str, ):
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    data_config_path = input("Введите путь до конфига: ")
+    asyncio.run(main(data_pipeline = data_config_path))

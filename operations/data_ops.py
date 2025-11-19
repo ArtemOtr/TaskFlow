@@ -1,3 +1,4 @@
+import asyncio
 import json
 import yaml
 import csv
@@ -53,3 +54,7 @@ async def json_to_string(data: str) -> str:
             "original_data": str(data)[:200] + "..." if len(str(data)) > 200 else str(data)
         }
         raise Exception(f"Ошибка выполнения операции: {error_result}")
+
+async def async_sleep(sleep_time: int = 10):
+    await asyncio.sleep(sleep_time)
+    return {"sleep_succesfull" : True}

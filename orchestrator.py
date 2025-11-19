@@ -12,6 +12,7 @@ class TaskOrchestrator:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.operations = operations
+        self.ready_tasks = []
 
     async def init_db(self):
         if not self._db_initialized:
@@ -81,13 +82,8 @@ class TaskOrchestrator:
 
         tasks = self.dag_config["tasks"]
 
-        ready_tasks = await self._find_ready_tasks(tasks)
-        while ready_tasks:
-            # Выполняем готовые задачи
-            await self._execute_tasks(ready_tasks)
-
-            # Находим следующие готовые задачи
-            ready_tasks = await self._find_ready_tasks(tasks)
+        self.ready_tasks = await self._find_ready_tasks(tasks)
+        await self._execute_tasks(self.ready_tasks)
 
         print(f"Весь DAG {dag_id} выполнен!")
         return self.results
@@ -107,7 +103,8 @@ class TaskOrchestrator:
             if state:
                 if state["status"] == "completed":
                     continue
-
+                if state["status"] == "running":
+                    continue
                 if state["status"] == "failed":
                     retry_count = state["retry_count"]
                     if retry_count >= self.max_retries:
@@ -185,6 +182,8 @@ class TaskOrchestrator:
                 self.results[task_id] = result
                 print(f"{task_id} завершена")
                 print(f"Результаты: {result}\n")
+                self.ready_tasks = await self._find_ready_tasks(self.dag_config["tasks"])
+                await self._execute_tasks(self.ready_tasks)
                 break  # Выходим из цикла retry при успехе
 
             except Exception as e:

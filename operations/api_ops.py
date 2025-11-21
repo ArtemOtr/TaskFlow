@@ -6,7 +6,7 @@ import random
 import os
 
 
-async def fetch_api_data(url: str, method: str, headers: Dict = None, params: Dict = None, output_path: str = None) -> Dict[str, Any]:
+async def fetch_api_data(url: str, method: str, headers: Dict = None, params: Dict = None, filename: str = None) -> Dict[str, Any]:
     """
     Получает данные через API
 
@@ -19,18 +19,24 @@ async def fetch_api_data(url: str, method: str, headers: Dict = None, params: Di
     Returns:
         Словарь с результатами запроса
     """
+
     if not headers:
         headers = {}
     if not params:
         params = {}
 
-    if not output_path:
+    if not filename:
         id = random.randint(1000000, 9999999)
         output_path = f"./userdata/{id}.json"
         while os.path.exists(output_path):
             id = random.randint(1000000, 9999999)
             output_path = f"./userdata/{id}.json"
-
+    else:
+        filename = os.path.basename(filename)
+        output_path = f"./userdata/{filename}"
+        while os.path.exists(output_path):
+            id = random.randint(1000000, 9999999)
+            output_path = f"./userdata/{id}.json"
     try:
         async with aiohttp.ClientSession() as session:
             if method.upper() == "GET":
@@ -59,7 +65,7 @@ async def fetch_api_data(url: str, method: str, headers: Dict = None, params: Di
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
 
-            return {"output_json_path": output_path}
+            return {"output_file_path": output_path}
 
     except Exception as e:
         raise ConnectionError(f"Request failed: {str(e)}") from e

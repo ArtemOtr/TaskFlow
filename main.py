@@ -14,8 +14,6 @@ async def main(data_pipeline: str):
         dag_id = dag_id,
         dag_config=dag_config,
         operations=OPERATIONS,
-        max_retries=3,
-        retry_delay=2
     )
 
     print("Запускаем DAG...")
@@ -28,8 +26,6 @@ async def main(data_pipeline: str):
         print(f"{task_id}: {result}")
 
 
-
-
 if __name__ == "__main__":
-    data_config_path = input("Введите путь до конфига: ")
+    data_config_path = "taskflow_config.json"
     asyncio.run(main(data_pipeline = data_config_path))

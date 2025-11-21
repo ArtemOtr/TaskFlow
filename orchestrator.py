@@ -4,15 +4,15 @@ from typing import Dict, List, Any, Callable
 import aiosqlite
 import time
 import inspect
+import os
 
 class TaskOrchestrator:
-    def __init__(self, dag_config, operations,  dag_id, db_path = "orchestrator.db", max_retries=3, retry_delay=1):
+    def __init__(self, dag_config, operations,  dag_id, db_path = "orchestrator.db"):
         self.dag_config = dag_config
         self.results = {}
         self.db_path = db_path
-
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
+        self.max_retries = dag_config["max_retries"]
+        self.retry_delay = dag_config["retry_delay"]
         self.operations = operations
         self.ready_tasks = []
         self.dag_id = dag_id
@@ -126,6 +126,8 @@ class TaskOrchestrator:
         await self._execute_tasks(self.ready_tasks)
 
         print(f"Весь DAG {self.dag_id} выполнен!")
+
+        self.save_all_dag_data_for_user()
         return self.results
 
     async def _find_ready_tasks(self, tasks):
@@ -307,5 +309,36 @@ class TaskOrchestrator:
                         "updated_at": row[6]
                     }
         return status
+    def save_all_dag_data_for_user(self):
+        print("Созраняем данные в ZIP")
+        self.dag_config["dag_id"] = self.dag_id
+        print(self.dag_config)
+        print(self.results)
+        folderpath = f"./dags/{self.dag_id}"
+        if not os.path.exists(folderpath):
+            os.mkdir(folderpath)
+        else:
+            for filename in os.listdir(folderpath):
+                file_path = os.path.join(folderpath, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+        # Сохраняем конфиг и результаты
+        config_path =  os.path.join(folderpath, "config.json")
+        with open(config_path, "w", encoding="utf-8") as file:
+            json.dump(self.dag_config, file, ensure_ascii=False, indent=4)
+        res_path = os.path.join(folderpath, "results.json")
+        with open(res_path, "w", encoding="utf-8") as file:
+            json.dump(self.results, file, ensure_ascii=False, indent=4)
+
+        for task in self.results.keys():
+            for param in self.results[task].keys():
+                if param == "output_file_path":
+                    source_path = self.results[task][param]
+                    name = os.path.basename(source_path)
+                    new_path = os.path.join(folderpath, name)
+                    os.rename(source_path, new_path)
+        print(f"Данные DAG теперь лежат в {folderpath}")
+
+
 
 

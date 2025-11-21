@@ -8,7 +8,7 @@ data/
 reports/
 .env
 taskflow_config.json
-userdata/
+userdata_buffer/
 taskflow_config.json
 orchestrator.db
 tg_user_ids.json

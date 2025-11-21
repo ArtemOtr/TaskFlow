@@ -27,16 +27,16 @@ async def fetch_api_data(url: str, method: str, headers: Dict = None, params: Di
 
     if not filename:
         id = random.randint(1000000, 9999999)
-        output_path = f"./userdata/{id}.json"
+        output_path = f"./userdata_buffer/{id}.json"
         while os.path.exists(output_path):
             id = random.randint(1000000, 9999999)
-            output_path = f"./userdata/{id}.json"
+            output_path = f"./userdata_buffer/{id}.json"
     else:
         filename = os.path.basename(filename)
-        output_path = f"./userdata/{filename}"
+        output_path = f"./userdata_buffer/{filename}"
         while os.path.exists(output_path):
             id = random.randint(1000000, 9999999)
-            output_path = f"./userdata/{id}.json"
+            output_path = f"./userdata_buffer/{id}.json"
     try:
         async with aiohttp.ClientSession() as session:
             if method.upper() == "GET":

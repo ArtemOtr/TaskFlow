@@ -1,12 +1,15 @@
 {
-  "dag_id": "get_from_api_and_into_telegram",
+  "dag_name": "get_from_api_and_into_telegram",
+  "max_retries": 3,
+  "retry_delay": 3,
   "tasks": [
     {
       "id": "fetch_api_data",
       "operation": "fetch_api_data",
       "independent_params": {
         "url": "https://quotes.to.digital/api/random",
-        "method": "GET"
+        "method": "GET",
+        "filename": "something.json"
       },
       "dependent_params": {},
       "dependencies": []
@@ -16,8 +19,17 @@
       "operation": "json_to_string",
       "independent_params": {},
       "dependent_params": {
-        "data": "fetch_api_data.results.output_json_path"
+        "data": "fetch_api_data.results.output_file_path"
       },
+      "dependencies": ["fetch_api_data"]
+    },
+    {
+      "id": "async_sleep",
+      "operation": "async_sleep",
+      "independent_params": {
+        "sleep_time": 3
+      },
+      "dependent_params": {},
       "dependencies": ["fetch_api_data"]
     },
     {

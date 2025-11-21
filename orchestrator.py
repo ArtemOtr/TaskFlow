@@ -5,6 +5,7 @@ import aiosqlite
 import time
 import inspect
 import os
+import shutil
 
 class TaskOrchestrator:
     def __init__(self, dag_config, operations,  dag_id, db_path = "orchestrator.db"):
@@ -337,7 +338,9 @@ class TaskOrchestrator:
                     name = os.path.basename(source_path)
                     new_path = os.path.join(folderpath, name)
                     os.rename(source_path, new_path)
-        print(f"Данные DAG теперь лежат в {folderpath}")
+        shutil.make_archive(folderpath, 'zip', folderpath)
+        shutil.rmtree(folderpath)
+        print(f"Данные DAG теперь лежат в {folderpath}.zip")
 
 
 

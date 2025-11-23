@@ -6,17 +6,26 @@ import time
 import inspect
 import os
 import shutil
+import random
 
 class TaskOrchestrator:
-    def __init__(self, dag_config, operations,  dag_id, db_path = "orchestrator.db"):
+    def __init__(self, dag_config, operations, db_path = "orchestrator.db"):
         self.dag_config = dag_config
         self.results = {}
         self.db_path = db_path
-        self.max_retries = dag_config["max_retries"]
-        self.retry_delay = dag_config["retry_delay"]
+        self.max_retries = dag_config.get("max_retries", 3)
+        self.retry_delay = dag_config.get("retry_delay", 3)
+        dag_id = random.randint(1000000, 9999999)
+        dag_path = f"./dags/dag{dag_id}"
+        while os.path.exists(dag_path):
+            dag_id = random.randint(1000000, 9999999)
+            dag_path = f"./dags/dag{id}"
+        dag_id = f"dag{dag_id}"
+        self.dag_id = dag_id
+        self.dag_path = dag_path
         self.operations = operations
         self.ready_tasks = []
-        self.dag_id = dag_id
+
 
     async def init_db(self):
         async with aiosqlite.connect(self.db_path) as db:
@@ -38,7 +47,6 @@ class TaskOrchestrator:
             for task in self.dag_config["tasks"]:
                 task_id = task["id"]
                 params = json.dumps(self._get_funcs_param(task_config=task))
-                print("str params", params)
                 await db.execute(f'''
                     INSERT OR REPLACE INTO {self.dag_id} 
                     (task_id, status, result, error, params, retry_count, created_at, updated_at)
@@ -54,7 +62,6 @@ class TaskOrchestrator:
                     time.time()
                 ))
             await db.commit()
-            print("hui")
 
     def _get_funcs_param(self, task_config):
         task_id = task_config["id"]
@@ -62,7 +69,7 @@ class TaskOrchestrator:
         operation_func = self.operations[operation_name]
         independent_params = task_config["independent_params"]
 
-        print("independent_params", independent_params)
+
 
 
 
@@ -73,7 +80,6 @@ class TaskOrchestrator:
             if not(key in independent_params):
                 independent_params[key] = value
 
-        print("ujiahsdf", independent_params)
         return independent_params
 
 
@@ -120,6 +126,11 @@ class TaskOrchestrator:
             await self.cleanup_db()
             await self.init_db()
 
+        # иннициализация папки для сохраняемых файлов
+        os.mkdir(self.dag_path)
+        config_path = os.path.join(self.dag_path, "config.json")
+        with open(config_path, "w", encoding="utf-8") as file:
+            json.dump(self.dag_config, file, ensure_ascii=False, indent=4)
 
         tasks = self.dag_config["tasks"]
 
@@ -128,8 +139,11 @@ class TaskOrchestrator:
 
         print(f"Весь DAG {self.dag_id} выполнен!")
 
-        self.save_all_dag_data_for_user()
-        return self.results
+        self.save_dag_data_in_zip()
+        zip_path = f"{self.dag_path}.zip"
+        print("zip", zip_path)
+        return {"dag_path": self.dag_path,
+                "zip_path": zip_path}
 
     async def _find_ready_tasks(self, tasks):
         ready_tasks = []
@@ -149,10 +163,7 @@ class TaskOrchestrator:
                 if state["status"] == "running":
                     continue
                 if state["status"] == "failed":
-                    retry_count = state["retry_count"]
-                    if retry_count >= self.max_retries:
-                        print(f"{task_id} достигнут лимит повторов. Операция будет пропущена.")
-                        continue
+                    continue
 
             ready_tasks.append(task)
         return ready_tasks
@@ -188,7 +199,6 @@ class TaskOrchestrator:
 
         state = await self._load_task_state(task_id)
         all_params = state["params"]
-        print(all_params, type(all_params))
         current_retry = state.get("retry_count", 0) if state else 0
 
 
@@ -196,6 +206,14 @@ class TaskOrchestrator:
 
         for attempt in range(current_retry, self.max_retries):
             attempt_number = attempt + 1
+
+            # Сохраняем статус running
+            await self._save_task_state(
+                task_id,
+                status="running",
+                params=all_params,
+                retry_count=attempt_number
+            )
 
             try:
                 print(f" Запускаем {task_id}... (попытка {attempt_number}/{self.max_retries})")
@@ -215,19 +233,6 @@ class TaskOrchestrator:
                 for key in dependent_params.keys():
                     all_params[key] = dependent_params[key]
 
-                all_params_str = str(all_params)
-
-
-
-                # Сохраняем статус running
-                await self._save_task_state(
-                    task_id,
-                    status = "running",
-                    params = all_params_str,
-                    retry_count=attempt_number
-                )
-
-
                 operation_func = self.operations[operation_name]
                 result = await operation_func(**all_params)
 
@@ -235,16 +240,33 @@ class TaskOrchestrator:
                 await self._save_task_state(
                     task_id,
                     status="completed",
-                    params=all_params_str,
+                    params=all_params,
                     result=result,
                     retry_count=attempt_number
                 )
 
+
+
+                if "output_file_path" in result.keys():
+                    source_path = result["output_file_path"]
+                    name = os.path.basename(source_path)
+                    new_path = os.path.join(self.dag_path, name)
+                    os.rename(source_path, new_path)
+                    result["output_file_path"] = new_path
+
                 self.results[task_id] = result
+
+
+                res_path = os.path.join(self.dag_path, "results.json")
+                with open(res_path, "w", encoding="utf-8") as file:
+                    json.dump(self.results, file, ensure_ascii=False, indent=4)
+
                 print(f"{task_id} завершена")
                 print(f"Результаты: {result}\n")
                 self.ready_tasks = await self._find_ready_tasks(self.dag_config["tasks"])
                 await self._execute_tasks(self.ready_tasks)
+
+
                 break  # Выходим из цикла retry при успехе
 
             except Exception as e:
@@ -254,7 +276,7 @@ class TaskOrchestrator:
                 await self._save_task_state(
                     task_id,
                     status="failed",
-                    params = all_params_str,
+                    params = all_params,
                     error=str(e),
                     retry_count=attempt_number
                 )
@@ -310,37 +332,9 @@ class TaskOrchestrator:
                         "updated_at": row[6]
                     }
         return status
-    def save_all_dag_data_for_user(self):
-        print("Созраняем данные в ZIP")
-        self.dag_config["dag_id"] = self.dag_id
-        print(self.dag_config)
-        print(self.results)
-        folderpath = f"./dags/{self.dag_id}"
-        if not os.path.exists(folderpath):
-            os.mkdir(folderpath)
-        else:
-            for filename in os.listdir(folderpath):
-                file_path = os.path.join(folderpath, filename)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-        # Сохраняем конфиг и результаты
-        config_path =  os.path.join(folderpath, "config.json")
-        with open(config_path, "w", encoding="utf-8") as file:
-            json.dump(self.dag_config, file, ensure_ascii=False, indent=4)
-        res_path = os.path.join(folderpath, "results.json")
-        with open(res_path, "w", encoding="utf-8") as file:
-            json.dump(self.results, file, ensure_ascii=False, indent=4)
-
-        for task in self.results.keys():
-            for param in self.results[task].keys():
-                if param == "output_file_path":
-                    source_path = self.results[task][param]
-                    name = os.path.basename(source_path)
-                    new_path = os.path.join(folderpath, name)
-                    os.rename(source_path, new_path)
-        shutil.make_archive(folderpath, 'zip', folderpath)
-        shutil.rmtree(folderpath)
-        print(f"Данные DAG теперь лежат в {folderpath}.zip")
+    def save_dag_data_in_zip(self):
+        shutil.make_archive(self.dag_path, 'zip', self.dag_path)
+        print(f"Данные DAG теперь лежат в {self.dag_path}.zip")
 
 
 

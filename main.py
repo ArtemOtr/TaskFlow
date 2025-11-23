@@ -8,10 +8,8 @@ import random
 async def main(data_pipeline: str):
     with open(data_pipeline, "r") as f:
         dag_config = json.load(f)
-    dag_id = random.randint(1000000, 9999999)
-    dag_id = f"dag{dag_id}"
+
     orchestrator = TaskOrchestrator(
-        dag_id = dag_id,
         dag_config=dag_config,
         operations=OPERATIONS,
     )

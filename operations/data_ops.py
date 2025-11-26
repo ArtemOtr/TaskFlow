@@ -57,6 +57,6 @@ async def json_to_string(data: str) -> str:
 
 async def async_sleep(sleep_time: int = 10):
     # заглушка для тестов
-    raise ValueError("стоп мне неприятно")
     await asyncio.sleep(sleep_time)
+    raise ValueError("стоп мне неприятно")
     return {"sleep_succesfull" : True}

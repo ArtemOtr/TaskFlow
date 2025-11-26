@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DAG UI: {{ dag_id }}</title>
+    <meta http-equiv="refresh" content="5">
+
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        /* Делает SVG большим: растягивается на всю ширину карточки */
+        .graph-container svg {
+            width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+
+<body class="bg-light">
+
+<div class="container py-4">
+
+    <h1 class="mb-4">DAG: {{ dag_id }}</h1>
+
+    <!-- CARD: Graph -->
+    <div class="card mb-4 shadow-sm graph-container">
+        <div class="card-body text-center">
+            {{ graph_svg | safe }}
+        </div>
+    </div>
+
+    <h2 class="h4">Задачи</h2>
+    <p class="text-muted">Кликните на задачу, чтобы посмотреть детали.</p>
+
+    <!-- Tasks list -->
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        {% for task in tasks %}
+            <a href="{{ task.link }}" class="badge text-bg-primary text-decoration-none px-3 py-2 fs-6">
+                {{ task.id }}
+            </a>
+        {% endfor %}
+    </div>
+
+    <!-- ZIP button -->
+    {% if show_zip %}
+        <a href="{{ zip_link }}" class="btn btn-success btn-lg">
+            Скачать архив (DAG завершён)
+        </a>
+    {% endif %}
+
+</div>
+
+</body>
+</html>

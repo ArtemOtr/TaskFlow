@@ -4,9 +4,8 @@ import asyncio
 import aiohttp
 import os
 from datetime import datetime
-
 from croniter import croniter
-
+from aiogram.types import BufferedInputFile
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
@@ -16,13 +15,15 @@ from aiogram.types import (
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.client.default import DefaultBotProperties
+from flask.cli import load_dotenv
 
 # --------------------
 # CONFIG
 # --------------------
 
+load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-API_URL = "https://example.com/api/do"
+API_URL = "http://0.0.0.0:5000/api"
 
 DATA_DIR = "./tg_data"
 USERS_FILE = f"{DATA_DIR}/users.json"
@@ -43,13 +44,51 @@ dp = Dispatcher()
 # UTILS
 # --------------------
 
-def load_users():
-    with open(USERS_FILE, "r") as f:
-        return json.load(f)
-
 def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=4)
+    """Сохранение пользователей с конвертацией datetime в строку"""
+    # Создаем копию для сериализации
+    users_serializable = []
+
+    for user in users:
+        user_copy = user.copy()
+
+        # Конвертируем datetime объекты в строки
+        if 'last_run' in user_copy and isinstance(user_copy['last_run'], datetime):
+            user_copy['last_run'] = user_copy['last_run'].isoformat()
+
+        if 'next_run' in user_copy and isinstance(user_copy['next_run'], datetime):
+            user_copy['next_run'] = user_copy['next_run'].isoformat()
+
+        users_serializable.append(user_copy)
+
+    # Сохраняем
+    with open('./tg_data/users.json', 'w', encoding='utf-8') as f:
+        json.dump(users_serializable, f, ensure_ascii=False, indent=2)
+
+
+def load_users():
+    """Загрузка пользователей с конвертацией строк в datetime"""
+    try:
+        with open('./tg_data/users.json', 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            if not content:
+                return []
+
+            users = json.loads(content)
+
+            # Конвертируем строки обратно в datetime
+            for user in users:
+                if 'last_run' in user and isinstance(user['last_run'], str):
+                    user['last_run'] = datetime.fromisoformat(user['last_run'])
+
+                if 'next_run' in user and isinstance(user['next_run'], str):
+                    user['next_run'] = datetime.fromisoformat(user['next_run'])
+
+            return users
+
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+        print(f"Ошибка загрузки users: {e}")
+        return []
 
 def update_user(chat_id, **kwargs):
     users = load_users()
@@ -65,7 +104,8 @@ def update_user(chat_id, **kwargs):
             "cron": kwargs.get("cron"),
             "method": kwargs.get("method"),
             "config": kwargs.get("config"),
-            "last_run": None
+            "last_run": None,
+            "next_run": None
         })
     save_users(users)
 
@@ -242,24 +282,42 @@ async def perform_api_action(chat_id):
     user = next(u for u in users if u["chat_id"] == chat_id)
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(API_URL, json=user["config"]) as resp:
-            if user["method"] == "web":
-                j = await resp.json()
-                link = j.get("link")
-                await bot.send_message(chat_id, f"Ваши данные готовы:\n{link}")
+        if user["method"] == "web":
+            async with session.post(API_URL + "/web", json=user["config"]) as resp:
+                    j = await resp.json()
+                    link = j.get("link")
+                    await bot.send_message(chat_id, f"Ваши данные готовы:\n{link}")
 
-            else:  # zip
-                file_bytes = await resp.read()
-                filename = f"{uuid.uuid4()}.zip"
-                filepath = f"{TMP_DIR}/{filename}"
+        else:  # zip
+            try:
+                users = load_users()
+                user = next(u for u in users if u["chat_id"] == chat_id)
 
-                with open(filepath, "wb") as f:
-                    f.write(file_bytes)
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                            API_URL + "/cli",
+                            headers={"Content-Type": "application/json"},
+                            json=user["config"]
+                    ) as resp:
+                        if resp.status == 200:
+                            file_bytes = await resp.read()
 
-                # отправка
-                await bot.send_document(chat_id, InputFile(filepath), caption="Ваш ZIP архив")
+                            # Создаем BufferedInputFile
+                            input_file = BufferedInputFile(
+                                file=file_bytes,
+                                filename=f"archive_{chat_id}.zip"
+                            )
 
-                os.remove(filepath)
+                            await bot.send_document(
+                                chat_id=chat_id,
+                                document=input_file,
+                                caption="Ваш ZIP архив"
+                            )
+
+                            print(f"✅ Отправил архив пользователю {chat_id}")
+
+            except Exception as e:
+                print(f"❌ Ошибка: {e}")
 
 
 # --------------------
@@ -276,18 +334,20 @@ async def cron_worker():
                 continue
 
             cron = user["cron"]
-            itr = croniter(cron, user.get("last_run") or now)
-
-            next_run = itr.get_next(datetime)
-
-            if next_run <= now:
-                await perform_api_action(user["chat_id"])
-                user["last_run"] = now
-
+            if not user.get("next_run"):
+                itr = croniter(cron, user.get("last_run") or now)
+                user["next_run"] = itr.get_next(datetime)
                 save_users(users)
 
-        await asyncio.sleep(30)
 
+            if user["next_run"] <= now:
+                await perform_api_action(user["chat_id"])
+                user["last_run"] = now
+                itr = croniter(cron, user.get("last_run") or now)
+                user["next_run"] = itr.get_next(datetime)
+                save_users(users)
+
+        await asyncio.sleep(20)
 
 # --------------------
 # RUN

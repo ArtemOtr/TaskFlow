@@ -16,8 +16,8 @@ async def get_chat_id_by_username(username: str,  token: str) -> int:
     if username[0] == "@":
         username = username[1:]
     users = {}
-    if os.path.exists("tg_user_ids.json"):
-        with open("tg_user_ids.json", 'r', encoding='utf-8') as file:
+    if os.path.exists("./tg_data/tg_user_ids.json"):
+        with open("./tg_data/tg_user_ids.json", 'r', encoding='utf-8') as file:
             users = json.load(file)
         if username in users:
             chat_id = users[username]

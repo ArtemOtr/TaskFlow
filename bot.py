@@ -90,25 +90,38 @@ def load_users():
         print(f"Ошибка загрузки users: {e}")
         return []
 
+
 def update_user(chat_id, **kwargs):
     users = load_users()
-    for u in users:
-        if u["chat_id"] == chat_id:
-            for k,v in kwargs.items():
-                u[k] = v
-            break
-    else:
-        users.append({
-            "chat_id": chat_id,
-            "username": kwargs.get("username"),
-            "cron": kwargs.get("cron"),
-            "method": kwargs.get("method"),
-            "config": kwargs.get("config"),
-            "last_run": None,
-            "next_run": None
-        })
-    save_users(users)
 
+    # Поиск существующего пользователя
+    for user in users:
+        if user["chat_id"] == chat_id:
+            # Обновляем ВСЕ переданные поля
+            for key, value in kwargs.items():
+                user[key] = value
+
+            # Сбрасываем cron-времена при изменении cron
+            if 'cron' in kwargs:
+                user['last_run'] = None
+                user['next_run'] = None
+                print(f"Сброшены таймеры для пользователя {chat_id}")
+
+            save_users(users)
+            return
+
+    # Если пользователь не найден - создаем нового
+    new_user = {
+        "chat_id": chat_id,
+        "username": kwargs.get("username"),
+        "cron": kwargs.get("cron"),
+        "method": kwargs.get("method"),
+        "config": kwargs.get("config"),
+        "last_run": None,
+        "next_run": None
+    }
+    users.append(new_user)
+    save_users(users)
 
 # --------------------
 # FSM
@@ -162,6 +175,24 @@ async def start_cmd(msg: Message, state: FSMContext):
     await state.set_state(UserState.waiting_for_config)
     await msg.answer("Привет! 👋\nСкинь конфиг в формате JSON.")
 
+
+@dp.message(Command("status"))
+async def status_cmd(msg: Message):
+    users = load_users()
+    for user in users:
+        if user["chat_id"] == msg.chat.id:
+            status_text = (
+                f"Ваши текущие настройки:\n"
+                f"Config: {'загружен' if user.get('config') else 'нет'}\n"
+                f"Cron: {user.get('cron') or 'не задан'}\n"
+                f"Method: {user.get('method') or 'не выбран'}\n"
+                f"Last run: {user.get('last_run')}\n"
+                f"Next run: {user.get('next_run')}"
+            )
+            await msg.answer(status_text)
+            return
+
+    await msg.answer("У вас нет сохраненных настроек. Используйте /start")
 
 # --------------------
 # CONFIG

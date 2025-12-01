@@ -14,3 +14,4 @@ orchestrator.db
 tg_data/tg_user_ids.json
 /dags/
 tg_data/
+otel_minimal.patch

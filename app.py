@@ -11,6 +11,15 @@ from operations import OPERATIONS
 import pydot
 import aiofiles
 from asgiref.wsgi import WsgiToAsgi
+from otel_config import configure_opentelemetry, get_tracer, get_meter
+
+
+configure_opentelemetry(service_name="taskflow")
+
+tracer = get_tracer("taskflow")
+meter = get_meter("taskflow")
+api_cli_req_counter = meter.create_counter("api_cli_req_counter")
+api_web_req_counter = meter.create_counter("api_web_req_counter")
 
 app = Quart(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -21,6 +30,7 @@ DB_PATH = os.path.join(BASE_DIR, 'orchestrator.db')
 # "/api/cli" logic
 @app.route("/api/cli", methods=["POST"])
 async def run_cli():
+    api_cli_req_counter.add(1)
     config = await request.get_json()
     if not config:
         raise BadRequest("JSON body is required")
@@ -122,6 +132,7 @@ async def generate_dag_graph(dag_id, config):
 @app.route('/api/web', methods=['POST'])
 async def api_web():
     config = await request.get_json()
+    api_web_req_counter.add(1)
     if not config or 'dag_name' not in config:
         return jsonify({'error': 'Invalid config'}), 400
 

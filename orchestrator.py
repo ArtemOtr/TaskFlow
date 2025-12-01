@@ -7,6 +7,24 @@ import inspect
 import os
 import shutil
 import random
+from otel_config import get_tracer
+import logging
+
+logger = logging.getLogger("taskflow")
+logger.setLevel(logging.INFO)
+
+
+if not logger.hasHandlers():
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+# Пример использования
+logger.info("DAG started")
+
+tracer = get_tracer("taskflow.orchestrator")
 
 class TaskOrchestrator:
     def __init__(self, dag_config, operations, db_path = "orchestrator.db"):
@@ -95,7 +113,7 @@ class TaskOrchestrator:
                 await db.commit()
             except aiosqlite.OperationalError as e:
                 if "no such table" in str(e):
-                    print("Таблица не существует, нечего очищать")
+                    logger.info("Таблица не существует, нечего очищать")
                     pass
                 else:
                     raise e
@@ -118,32 +136,33 @@ class TaskOrchestrator:
     async def execute_dag(self, recovery_mode = False):
         """Запуск DAG"""
 
+        with tracer.start_as_current_span(f"dag.run") as span:
+            span.set_attribute("dag.id", self.dag_id)
+            logger.info(f"Запуск {self.dag_id}...")
 
-        print(f"Запуск {self.dag_id}...")
+            if not recovery_mode:
+                logger.info(f" Новый запуск DAG: {self.dag_id}...")
+                await self.cleanup_db()
+                await self.init_db()
 
-        if not recovery_mode:
-            print(f" Новый запуск DAG: {self.dag_id}...")
-            await self.cleanup_db()
-            await self.init_db()
+            # иннициализация папки для сохраняемых файлов
+            os.mkdir(self.dag_path)
+            config_path = os.path.join(self.dag_path, "config.json")
+            with open(config_path, "w", encoding="utf-8") as file:
+                json.dump(self.dag_config, file, ensure_ascii=False, indent=4)
 
-        # иннициализация папки для сохраняемых файлов
-        os.mkdir(self.dag_path)
-        config_path = os.path.join(self.dag_path, "config.json")
-        with open(config_path, "w", encoding="utf-8") as file:
-            json.dump(self.dag_config, file, ensure_ascii=False, indent=4)
+            tasks = self.dag_config["tasks"]
 
-        tasks = self.dag_config["tasks"]
+            self.ready_tasks = await self._find_ready_tasks(tasks)
+            await self._execute_tasks(self.ready_tasks)
 
-        self.ready_tasks = await self._find_ready_tasks(tasks)
-        await self._execute_tasks(self.ready_tasks)
+            logger.info(f"Весь DAG {self.dag_id} выполнен!")
 
-        print(f"Весь DAG {self.dag_id} выполнен!")
-
-        self.save_dag_data_in_zip()
-        zip_path = f"{self.dag_path}.zip"
-        print("zip", zip_path)
-        return {"dag_path": self.dag_path,
-                "zip_path": zip_path}
+            self.save_dag_data_in_zip()
+            zip_path = f"{self.dag_path}.zip"
+            logger.info("zip", zip_path)
+            return {"dag_path": self.dag_path,
+                    "zip_path": zip_path}
 
     async def _find_ready_tasks(self, tasks):
         ready_tasks = []
@@ -201,94 +220,96 @@ class TaskOrchestrator:
         all_params = state["params"]
         current_retry = state.get("retry_count", 0) if state else 0
 
+        with tracer.start_as_current_span(f"task.{task_id}") as span:
+            span.set_attribute("task.id", task_id)
+            span.set_attribute("task.operation", operation_name)
+            logger.info(f"Запускаем {task_id}...")
 
-        print(f"Запускаем {task_id}...")
+            for attempt in range(current_retry, self.max_retries):
+                attempt_number = attempt + 1
 
-        for attempt in range(current_retry, self.max_retries):
-            attempt_number = attempt + 1
-
-            # Сохраняем статус running
-            await self._save_task_state(
-                task_id,
-                status="running",
-                params=all_params,
-                retry_count=attempt_number
-            )
-
-            try:
-                print(f" Запускаем {task_id}... (попытка {attempt_number}/{self.max_retries})")
-                if dependent_params:
-                    for key, value in dependent_params.items():
-                        prev_task_id, result_field, param_name = dependent_params[key].split(".")[0], \
-                        dependent_params[key].split(".")[1], dependent_params[key].split(".")[2]
-                        if prev_task_id in self.results:
-                            if param_name in self.results[prev_task_id]:
-                                dependent_params[key] = self.results[prev_task_id][param_name]
-                            else:
-                                raise ValueError(f"Parametr '{param_name}' not found in task results")
-                        else:
-                            raise ValueError(f"Task with id '{prev_task_id}' not found in dag config file")
-
-
-                for key in dependent_params.keys():
-                    all_params[key] = dependent_params[key]
-
-                operation_func = self.operations[operation_name]
-                result = await operation_func(**all_params)
-
-                # Успех - сохраняем результат
+                # Сохраняем статус running
                 await self._save_task_state(
                     task_id,
-                    status="completed",
+                    status="running",
                     params=all_params,
-                    result=result,
                     retry_count=attempt_number
                 )
 
+                try:
+                    logger.info(f" Запускаем {task_id}... (попытка {attempt_number}/{self.max_retries})")
+                    if dependent_params:
+                        for key, value in dependent_params.items():
+                            prev_task_id, result_field, param_name = dependent_params[key].split(".")[0], \
+                            dependent_params[key].split(".")[1], dependent_params[key].split(".")[2]
+                            if prev_task_id in self.results:
+                                if param_name in self.results[prev_task_id]:
+                                    dependent_params[key] = self.results[prev_task_id][param_name]
+                                else:
+                                    raise ValueError(f"Parametr '{param_name}' not found in task results")
+                            else:
+                                raise ValueError(f"Task with id '{prev_task_id}' not found in dag config file")
 
 
-                if "output_file_path" in result.keys():
-                    source_path = result["output_file_path"]
-                    name = os.path.basename(source_path)
-                    new_path = os.path.join(self.dag_path, name)
-                    os.rename(source_path, new_path)
-                    result["output_file_path"] = new_path
+                    for key in dependent_params.keys():
+                        all_params[key] = dependent_params[key]
 
-                self.results[task_id] = result
+                    operation_func = self.operations[operation_name]
+                    result = await operation_func(**all_params)
 
-
-                res_path = os.path.join(self.dag_path, "results.json")
-                with open(res_path, "w", encoding="utf-8") as file:
-                    json.dump(self.results, file, ensure_ascii=False, indent=4)
-
-                print(f"{task_id} завершена")
-                print(f"Результаты: {result}\n")
-                self.ready_tasks = await self._find_ready_tasks(self.dag_config["tasks"])
-                await self._execute_tasks(self.ready_tasks)
+                    # Успех - сохраняем результат
+                    await self._save_task_state(
+                        task_id,
+                        status="completed",
+                        params=all_params,
+                        result=result,
+                        retry_count=attempt_number
+                    )
 
 
-                break  # Выходим из цикла retry при успехе
 
-            except Exception as e:
-                print(f"{task_id} упала с ошибкой (попытка {attempt_number}/{self.max_retries}): {e}")
+                    if "output_file_path" in result.keys():
+                        source_path = result["output_file_path"]
+                        name = os.path.basename(source_path)
+                        new_path = os.path.join(self.dag_path, name)
+                        os.rename(source_path, new_path)
+                        result["output_file_path"] = new_path
 
-                # Сохраняем ошибку
-                await self._save_task_state(
-                    task_id,
-                    status="failed",
-                    params = all_params,
-                    error=str(e),
-                    retry_count=attempt_number
-                )
+                    self.results[task_id] = result
 
-                # Проверяем есть ли еще попытки
-                if attempt_number < self.max_retries:
-                    print(f"Повтор {task_id} через {self.retry_delay}с...")
-                    await asyncio.sleep(self.retry_delay)
-                else:
-                    print(f"{task_id} окончательно упала после {self.max_retries} попыток")
-                    # Можно выбросить исключение или просто залогировать
-                    break
+
+                    res_path = os.path.join(self.dag_path, "results.json")
+                    with open(res_path, "w", encoding="utf-8") as file:
+                        json.dump(self.results, file, ensure_ascii=False, indent=4)
+
+                    logger.info(f"{task_id} завершена")
+                    logger.info(f"Результаты: {result}\n")
+                    self.ready_tasks = await self._find_ready_tasks(self.dag_config["tasks"])
+                    await self._execute_tasks(self.ready_tasks)
+
+
+                    break  # Выходим из цикла retry при успехе
+
+                except Exception as e:
+                    logger.info(f"{task_id} упала с ошибкой (попытка {attempt_number}/{self.max_retries}): {e}")
+
+                    # Сохраняем ошибку
+                    await self._save_task_state(
+                        task_id,
+                        status="failed",
+                        params = all_params,
+                        error=str(e),
+                        retry_count=attempt_number
+                    )
+
+                    # Проверяем есть ли еще попытки
+                    if attempt_number < self.max_retries:
+                        logger.info(f"Повтор {task_id} через {self.retry_delay}с...")
+                        await asyncio.sleep(self.retry_delay)
+                    else:
+                        logger.info(f"{task_id} окончательно упала после {self.max_retries} попыток")
+                        # Можно выбросить исключение или просто залогировать
+                        break
 
     async def _save_task_state(self, task_id: str, status: str, params: str, result=None, error=None, retry_count=0):
         """Сохраняет состояние задачи в БД"""
@@ -334,7 +355,7 @@ class TaskOrchestrator:
         return status
     def save_dag_data_in_zip(self):
         shutil.make_archive(self.dag_path, 'zip', self.dag_path)
-        print(f"Данные DAG теперь лежат в {self.dag_path}.zip")
+        logger.info(f"Данные DAG теперь лежат в {self.dag_path}.zip")
 
 
 

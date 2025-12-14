@@ -160,7 +160,6 @@ class TaskOrchestrator:
 
             self.save_dag_data_in_zip()
             zip_path = f"{self.dag_path}.zip"
-            logger.info("zip", zip_path)
             return {"dag_path": self.dag_path,
                     "zip_path": zip_path}
 
@@ -246,8 +245,10 @@ class TaskOrchestrator:
                                 if param_name in self.results[prev_task_id]:
                                     dependent_params[key] = self.results[prev_task_id][param_name]
                                 else:
+                                    logger.error(f"Parametr '{param_name}' not found in task results")
                                     raise ValueError(f"Parametr '{param_name}' not found in task results")
                             else:
+                                logger.error(f"Task with id '{prev_task_id}' not found in dag config file")
                                 raise ValueError(f"Task with id '{prev_task_id}' not found in dag config file")
 
 
@@ -291,7 +292,7 @@ class TaskOrchestrator:
                     break  # Выходим из цикла retry при успехе
 
                 except Exception as e:
-                    logger.info(f"{task_id} упала с ошибкой (попытка {attempt_number}/{self.max_retries}): {e}")
+                    logger.error(f"{task_id} упала с ошибкой (попытка {attempt_number}/{self.max_retries}): {e}")
 
                     # Сохраняем ошибку
                     await self._save_task_state(

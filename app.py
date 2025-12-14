@@ -12,6 +12,17 @@ import pydot
 import aiofiles
 from asgiref.wsgi import WsgiToAsgi
 from otel_config import configure_opentelemetry, get_tracer, get_meter
+import logging
+
+logger = logging.getLogger("taskflow")
+logger.setLevel(logging.INFO)
+
+if not logger.hasHandlers():
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
 
 
 configure_opentelemetry(service_name="taskflow")
@@ -42,10 +53,12 @@ async def run_cli():
         )
         dag_id = orchestrator.dag_id
         await orchestrator.execute_dag(recovery_mode=False)
-
-
+        with tracer.start_as_current_span(f"dag.run") as span:
+            span.set_attribute("dag.id", dag_id)
+            logger.info(f"DAG {dag_id} по ручке /api/cli запущен")
         return await send_from_directory(DAGS_DIR, f"{dag_id}.zip", as_attachment=True)
     except Exception as e:
+
         return {"error": str(e)}, 500
 
 
@@ -143,7 +156,10 @@ async def api_web():
         )
         dag_id = orchestrator.dag_id
         asyncio.create_task(orchestrator.execute_dag(recovery_mode=False))
-        print(f"Launching DAG {dag_id}...")  # Мок-запуск
+
+        with tracer.start_as_current_span(f"dag.run") as span:
+            span.set_attribute("dag.id", dag_id)
+            logger.info(f"DAG {dag_id} по ручке /api/web запущен")
 
         # Возвращаем ссылку
         ui_link = url_for('dag_ui', dag_id=dag_id, _external=True)

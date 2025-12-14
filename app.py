@@ -11,6 +11,26 @@ from operations import OPERATIONS
 import pydot
 import aiofiles
 from asgiref.wsgi import WsgiToAsgi
+from otel_config import configure_opentelemetry, get_tracer, get_meter
+import logging
+
+logger = logging.getLogger("taskflow")
+logger.setLevel(logging.INFO)
+
+if not logger.hasHandlers():
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+
+configure_opentelemetry(service_name="taskflow")
+
+tracer = get_tracer("taskflow")
+meter = get_meter("taskflow")
+api_cli_req_counter = meter.create_counter("api_cli_req_counter")
+api_web_req_counter = meter.create_counter("api_web_req_counter")
 
 app = Quart(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -21,6 +41,7 @@ DB_PATH = os.path.join(BASE_DIR, 'orchestrator.db')
 # "/api/cli" logic
 @app.route("/api/cli", methods=["POST"])
 async def run_cli():
+    api_cli_req_counter.add(1)
     config = await request.get_json()
     if not config:
         raise BadRequest("JSON body is required")
@@ -32,10 +53,12 @@ async def run_cli():
         )
         dag_id = orchestrator.dag_id
         await orchestrator.execute_dag(recovery_mode=False)
-
-
+        with tracer.start_as_current_span(f"dag.run") as span:
+            span.set_attribute("dag.id", dag_id)
+            logger.info(f"DAG {dag_id} по ручке /api/cli запущен")
         return await send_from_directory(DAGS_DIR, f"{dag_id}.zip", as_attachment=True)
     except Exception as e:
+
         return {"error": str(e)}, 500
 
 
@@ -122,6 +145,7 @@ async def generate_dag_graph(dag_id, config):
 @app.route('/api/web', methods=['POST'])
 async def api_web():
     config = await request.get_json()
+    api_web_req_counter.add(1)
     if not config or 'dag_name' not in config:
         return jsonify({'error': 'Invalid config'}), 400
 
@@ -132,7 +156,10 @@ async def api_web():
         )
         dag_id = orchestrator.dag_id
         asyncio.create_task(orchestrator.execute_dag(recovery_mode=False))
-        print(f"Launching DAG {dag_id}...")  # Мок-запуск
+
+        with tracer.start_as_current_span(f"dag.run") as span:
+            span.set_attribute("dag.id", dag_id)
+            logger.info(f"DAG {dag_id} по ручке /api/web запущен")
 
         # Возвращаем ссылку
         ui_link = url_for('dag_ui', dag_id=dag_id, _external=True)

@@ -11,5 +11,7 @@ taskflow_config.json
 userdata_buffer/
 taskflow_config.json
 orchestrator.db
-tg_user_ids.json
+tg_data/tg_user_ids.json
 /dags/
+tg_data/
+otel_minimal.patch

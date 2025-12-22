@@ -45,7 +45,7 @@ def configure_opentelemetry(
     handler = LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
     logging.basicConfig(level=logging.INFO, handlers=[handler])
 
-    print("✓ OpenTelemetry configured")
+    print("OpenTelemetry configured")
 
     return trace_provider, meter_provider, logger_provider
 

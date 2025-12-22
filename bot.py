@@ -832,7 +832,7 @@ async def cron_worker():
 
         except Exception as e:
             logger.error(f"Ошибка в cron worker: {e}")
-            await asyncio.sleep(60)  # Ждем дольше при ошибке
+            await asyncio.sleep(60)
 
 
 # --------------------
@@ -842,7 +842,6 @@ async def cron_worker():
 async def main():
     logger.info("🤖 Запуск бота...")
 
-    # Запускаем cron worker
     cron_task = asyncio.create_task(cron_worker())
     logger.info("Cron worker запущен")
 

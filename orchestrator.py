@@ -21,9 +21,6 @@ if not logger.hasHandlers():
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-# Пример использования
-logger.info("DAG started")
-
 tracer = get_tracer("taskflow.orchestrator")
 
 class TaskOrchestrator:
@@ -47,7 +44,6 @@ class TaskOrchestrator:
 
     async def init_db(self):
         async with aiosqlite.connect(self.db_path) as db:
-            # Создаем таблицу
             await db.execute(f'''
                 CREATE TABLE IF NOT EXISTS {self.dag_id} (
                     task_id TEXT PRIMARY KEY,
@@ -61,7 +57,6 @@ class TaskOrchestrator:
                 )
             ''')
 
-            # Инициализируем все задачи из DAG конфига
             for task in self.dag_config["tasks"]:
                 task_id = task["id"]
                 params = json.dumps(self._get_funcs_param(task_config=task))
@@ -164,6 +159,7 @@ class TaskOrchestrator:
                     "zip_path": zip_path}
 
     async def _find_ready_tasks(self, tasks):
+        """Нахождение готовых задач"""
         ready_tasks = []
 
         for task in tasks:

@@ -41,6 +41,9 @@ DB_PATH = os.path.join(BASE_DIR, 'orchestrator.db')
 # "/api/cli" logic
 @app.route("/api/cli", methods=["POST"])
 async def run_cli():
+    """
+    ручка /api/cli
+    """
     api_cli_req_counter.add(1)
     config = await request.get_json()
     if not config:
@@ -67,18 +70,20 @@ def index():
     return {"status": "ok"}
 
 
-# "/api/web" logic
-
-
 
 def db_connect():
+    """
+    функция для подключения к orchestrator.db
+    """
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # чтобы row["status"] работало
+    conn.row_factory = sqlite3.Row
     return conn
 
 
-# Асинхронный хелпер для загрузки конфига DAG
-async def load_dag_config(dag_id):
+async def load_dag_config(dag_id: str):
+    """
+    загрузчик конфига по id
+    """
     dag_path = os.path.join(DAGS_DIR, dag_id)
     config_path = os.path.join(dag_path, "config.json")
 
@@ -91,8 +96,11 @@ async def load_dag_config(dag_id):
         return json.loads(content)
 
 
-# Асинхронный хелпер для загрузки results.json, если существует
-async def load_dag_results(dag_id):
+
+async def load_dag_results(dag_id: str):
+    """
+    асинхронный загрузчик результатов
+    """
     results_path = os.path.join(DAGS_DIR, dag_id, 'results.json')
     if os.path.exists(results_path):
         async with aiofiles.open(results_path, 'r') as f:
@@ -108,8 +116,11 @@ async def is_dag_complete(dag_id):
     return False
 
 
-# Хелпер для генерации SVG-графа с pydot
+
 async def generate_dag_graph(dag_id, config):
+    """
+    генерация SVG-графа с pydot
+    """
     graph = pydot.Dot(graph_type='digraph', rankdir='LR')
     conn = db_connect()
     cursor = conn.cursor()
@@ -144,6 +155,9 @@ async def generate_dag_graph(dag_id, config):
 
 @app.route('/api/web', methods=['POST'])
 async def api_web():
+    """
+    ручка api/web
+    """
     config = await request.get_json()
     api_web_req_counter.add(1)
     if not config or 'dag_name' not in config:
@@ -175,7 +189,7 @@ async def dag_ui(dag_id):
     if not config:
         abort(404)
 
-    # Генерируем граф SVG
+    # генерируем граф SVG
     graph_svg = await generate_dag_graph(dag_id=dag_id, config=config)
 
     # Получаем список задач с ссылками
@@ -184,11 +198,9 @@ async def dag_ui(dag_id):
         task_link = url_for('task_details', dag_id=dag_id, task_id=task['id'])
         tasks.append({'id': task['id'], 'link': task_link})
 
-    # Проверяем наличие ZIP для скачивания
     show_zip = await is_dag_complete(dag_id)
     zip_link = url_for('download_zip', dag_id=dag_id) if show_zip else None
 
-    # Рендерим с meta-refresh для опроса
     return await render_template('dag_ui.html', dag_id=dag_id, graph_svg=graph_svg, tasks=tasks, show_zip=show_zip,
                            zip_link=zip_link)
 

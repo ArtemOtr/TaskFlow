@@ -174,7 +174,6 @@ async def api_web():
         with tracer.start_as_current_span(f"dag.run") as span:
             span.set_attribute("dag.id", dag_id)
             logger.info(f"DAG {dag_id} по ручке /api/web запущен")
-
         # Возвращаем ссылку
         ui_link = url_for('dag_ui', dag_id=dag_id, _external=True)
         return jsonify({'link': ui_link})
